@@ -9,14 +9,11 @@ repositories {
 dependencies {
     implementation 'pl.edu.icm.pcj:pcj:5.1.0'
     annotationProcessor 'pl.edu.icm.pcj:pcj:5.1.0'
-    implementation('org.apache.hadoop:hadoop-core:1.2.1') {
-        transitive = false
-    }
     implementation('org.apache.hadoop:hadoop-common:3.2.1') {
-        transitive = false
+//        transitive = false
     }
     implementation('org.apache.hadoop:hadoop-hdfs:3.2.1') {
-        transitive = false
+//        transitive = false
     }
 }
 

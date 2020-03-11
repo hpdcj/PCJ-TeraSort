@@ -5,11 +5,10 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.RandomAccessFile;
+import java.io.OutputStream;
 import java.io.Serializable;
 import java.io.UncheckedIOException;
 import java.nio.MappedByteBuffer;
-import java.nio.channels.FileChannel;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -17,8 +16,14 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.function.Predicate;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import org.apache.hadoop.fs.ContentSummary;
+import org.apache.hadoop.fs.FSDataInputStream;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
 import org.pcj.PCJ;
 import org.pcj.PcjFuture;
 import org.pcj.RegisterStorage;
@@ -26,24 +31,23 @@ import org.pcj.StartPoint;
 import org.pcj.Storage;
 
 /**
- * Second version of PcjTeraSort benchmark based on {@link PcjTeraSortMultiplePivots}.
+ * Fifth version of PcjTeraSort benchmark based on {@link PcjTeraSortOnePivotMultipleFiles}.
  * <p>
  * Each thread has  one pivot (totalNumberOfPivots = threadCount),
  * with exception when number of threads is greater than number of elements in input.
  * <p>
- * Writing sequentially to one file.
+ * Each thread reads input from HDFS and writes output to separate file on HDFS.
  */
-@RegisterStorage(PcjTeraSortOnePivot.Vars.class)
-public class PcjTeraSortOnePivot implements StartPoint {
+@RegisterStorage(PcjTeraSortHdfsOnePivotMultipleFiles.Vars.class)
+public class PcjTeraSortHdfsOnePivotMultipleFiles implements StartPoint {
 
     private static final long MEMORY_MAP_ELEMENT_COUNT = Long.parseLong(System.getProperty("memoryMap.elementCount", "1000000"));
 
-    @Storage(PcjTeraSortOnePivot.class)
+    @Storage(PcjTeraSortHdfsOnePivotMultipleFiles.class)
     enum Vars {
-        sequencer, pivots, buckets
+        pivots, buckets
     }
 
-    private boolean sequencer;
     @SuppressWarnings("serializable")
     private List<Element> pivots = new ArrayList<>();
     private Element[][] buckets;
@@ -53,7 +57,7 @@ public class PcjTeraSortOnePivot implements StartPoint {
             System.err.println("Parameters: <input-file> <output-file> <total-pivots> <nodes-file>");
             return;
         }
-        PCJ.executionBuilder(PcjTeraSortOnePivot.class)
+        PCJ.executionBuilder(PcjTeraSortHdfsOnePivotMultipleFiles.class)
                 .addProperty("inputFile", args[0])
                 .addProperty("outputFile", args[1])
                 .addProperty("sampleSize", args[2])
@@ -63,12 +67,17 @@ public class PcjTeraSortOnePivot implements StartPoint {
 
     @Override
     public void main() throws Throwable {
-        if (PCJ.myId() == 0) {
-            PCJ.put(true, 0, Vars.sequencer);
-        }
+        org.apache.hadoop.conf.Configuration conf = new org.apache.hadoop.conf.Configuration();
+        String hdfsConf = System.getProperty("hdfsConf", "");
+        String[] hdfsConfigurations = hdfsConf.isEmpty() ? new String[0] : hdfsConf.split(Pattern.quote(File.pathSeparator));
+        Arrays.stream(hdfsConfigurations)
+                .filter(((Predicate<String>) String::isEmpty).negate())
+                .map(org.apache.hadoop.fs.Path::new)
+                .forEach(conf::addResource);
+        FileSystem hdfsFileSystem = FileSystem.get(conf);
 
         String inputFile = PCJ.getProperty("inputFile");
-        String outputFile = PCJ.getProperty("outputFile");
+        String outputFile = PCJ.getProperty("outputFile") + "-part" + PCJ.myId();
         int sampleSize = Integer.parseInt(PCJ.getProperty("sampleSize"));
 
         System.out.printf(Locale.ENGLISH, "Input file: %s%n", inputFile);
@@ -81,7 +90,7 @@ public class PcjTeraSortOnePivot implements StartPoint {
         long readingStart = 0;
         long sendingStart = 0;
 
-        try (TeraFileInput input = new TeraFileInput(inputFile)) {
+        try (TeraFileInput input = new TeraFileInput(hdfsFileSystem, inputFile)) {
             long totalElements = input.length();
 
             long localElementsCount = totalElements / PCJ.threadCount();
@@ -195,24 +204,23 @@ public class PcjTeraSortOnePivot implements StartPoint {
         System.out.println("TL:" + PCJ.myId() + "\tsorted_data\t" + (System.nanoTime() - startTime) / 1e9);
 
         // save into file
-        PCJ.waitFor(Vars.sequencer);
         System.out.println("TL:" + PCJ.myId() + "\twaitfor_saving\t" + (System.nanoTime() - startTime) / 1e9);
         long savingStart = System.nanoTime();
 
         System.out.printf(Locale.ENGLISH, "Thread %d started saving buckets to file%n", PCJ.myId());
-        try (TeraFileOutput output = new TeraFileOutput(outputFile)) {
+        try (TeraFileOutput output = new TeraFileOutput(hdfsFileSystem, outputFile)) {
             output.writeElements(sortedBuckets);
         }
-        PCJ.put(true, (PCJ.myId() + 1) % PCJ.threadCount(), Vars.sequencer);
+
         System.out.printf(Locale.ENGLISH, "Thread %d finished saving %d elements in %.7f seconds%n",
                 PCJ.myId(),
                 sortedBuckets.length,
                 (System.nanoTime() - savingStart) / 1e9);
         System.out.println("TL:" + PCJ.myId() + "\tsaved_data\t" + (System.nanoTime() - startTime) / 1e9);
 
+        PCJ.barrier();
         // display execution time
         if (PCJ.myId() == 0) {
-            PCJ.waitFor(Vars.sequencer);
             long stopTime = System.nanoTime();
             System.out.printf(Locale.ENGLISH, "Start to Pivots completed:  %17.9f%n", (readingStart - startTime) / 1e9);
             System.out.printf(Locale.ENGLISH, "Start to Reading completed: %17.9f%n", (sendingStart - startTime) / 1e9);
@@ -229,16 +237,21 @@ public class PcjTeraSortOnePivot implements StartPoint {
 
         private static final int keyLength = 10;
         private static final int valueLength = recordLength - keyLength;
-        private final FileChannel input;
+        private final FSDataInputStream input;
+        private final long inputFileSize;
         private final byte[] tempKeyBytes;
         private final byte[] tempValueBytes;
         private MappedByteBuffer mappedByteBuffer;
         private long minElementPos;
         private long maxElementPos;
 
-        public TeraFileInput(String inputFile) throws FileNotFoundException {
-            RandomAccessFile raf = new RandomAccessFile(inputFile, "r");
-            input = raf.getChannel();
+        public TeraFileInput(FileSystem hdfsFileSystem, String inputFile) throws IOException {
+            Path inputPath = new Path(inputFile);
+            ContentSummary inputSummary = hdfsFileSystem.getContentSummary(inputPath);
+            inputFileSize = inputSummary.getLength();
+
+            input = hdfsFileSystem.open(inputPath);
+
             tempKeyBytes = new byte[keyLength];
             tempValueBytes = new byte[valueLength];
 
@@ -252,8 +265,8 @@ public class PcjTeraSortOnePivot implements StartPoint {
             input.close();
         }
 
-        public long length() throws IOException {
-            return input.size() / recordLength;
+        public long length() {
+            return inputFileSize / recordLength;
         }
 
         public void seek(long pos) throws IOException {
@@ -262,20 +275,12 @@ public class PcjTeraSortOnePivot implements StartPoint {
             } else {
                 mappedByteBuffer = null;
             }
-            input.position(pos * recordLength);
+            input.seek(pos * recordLength);
         }
 
         public Element readElement() throws IOException {
-            if (mappedByteBuffer == null || !mappedByteBuffer.hasRemaining()) {
-                long size = Math.min(input.size() - input.position(), MEMORY_MAP_ELEMENT_COUNT * recordLength);
-                mappedByteBuffer = input.map(FileChannel.MapMode.READ_ONLY, input.position(), size);
-                minElementPos = input.position() / recordLength;
-                maxElementPos = minElementPos + size / recordLength;
-            }
-            mappedByteBuffer.get(tempKeyBytes);
-            mappedByteBuffer.get(tempValueBytes);
-
-            input.position(input.position() + recordLength);
+            input.readFully(tempKeyBytes);
+            input.readFully(tempValueBytes);
 
             return new Element(new Text(tempKeyBytes), new Text(tempValueBytes));
         }
@@ -284,8 +289,10 @@ public class PcjTeraSortOnePivot implements StartPoint {
     public static class TeraFileOutput implements AutoCloseable {
         private final BufferedOutputStream output;
 
-        public TeraFileOutput(String outputFile) throws FileNotFoundException {
-            output = new BufferedOutputStream(new FileOutputStream(outputFile, true));
+        public TeraFileOutput(FileSystem hdfsFileSystem, String outputFile) throws IOException {
+            Path outputPath = new Path(outputFile);
+            OutputStream outputStream = hdfsFileSystem.create(outputPath, true).getWrappedStream();
+            output = new BufferedOutputStream(outputStream);
         }
 
         public void writeElement(Element element) throws IOException {

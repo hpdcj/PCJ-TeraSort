@@ -56,7 +56,7 @@ public class PcjTeraSortOnePivotConcurrentWrite implements StartPoint {
                 .addProperty("outputFile", args[1])
                 .addProperty("sampleSize", args[2])
                 .addNodes(new File(args[3]))
-                .deploy();
+                .start();
     }
 
     @Override

@@ -31,7 +31,7 @@ import org.pcj.Storage;
  * Each thread has  one pivot (totalNumberOfPivots = threadCount),
  * with exception when number of threads is greater than number of elements in input.
  * <p>
- * Each thread writes output to separate one file.
+ * Each thread writes output to separate files.
  */
 @RegisterStorage(PcjTeraSortOnePivotMultipleFiles.Vars.class)
 public class PcjTeraSortOnePivotMultipleFiles implements StartPoint {
@@ -57,7 +57,7 @@ public class PcjTeraSortOnePivotMultipleFiles implements StartPoint {
                 .addProperty("outputFile", args[1])
                 .addProperty("sampleSize", args[2])
                 .addNodes(new File(args[3]))
-                .deploy();
+                .start();
     }
 
     @Override
@@ -279,7 +279,7 @@ public class PcjTeraSortOnePivotMultipleFiles implements StartPoint {
         private final BufferedOutputStream output;
 
         public TeraFileOutput(String outputFile) throws FileNotFoundException {
-            output = new BufferedOutputStream(new FileOutputStream(outputFile, true));
+            output = new BufferedOutputStream(new FileOutputStream(outputFile, false));
         }
 
         public void writeElement(Element element) throws IOException {
