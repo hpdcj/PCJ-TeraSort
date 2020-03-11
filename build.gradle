@@ -1,0 +1,54 @@
+plugins {
+    id 'java'
+}
+
+repositories {
+    jcenter()
+}
+
+dependencies {
+    implementation 'pl.edu.icm.pcj:pcj:5.1.0'
+    annotationProcessor 'pl.edu.icm.pcj:pcj:5.1.0'
+    implementation('org.apache.hadoop:hadoop-core:1.2.1') {
+        transitive = false
+    }
+    implementation('org.apache.hadoop:hadoop-common:3.2.1') {
+        transitive = false
+    }
+    implementation('org.apache.hadoop:hadoop-hdfs:3.2.1') {
+        transitive = false
+    }
+}
+
+if (!hasProperty('mainClass')) {
+    ext.mainClass = 'pl.umk.mat.faramir.terasort.App'
+}
+
+tasks.withType(Jar) {
+    destinationDirectory = file("${buildDir}/dist")
+}
+
+task copyToLib(type: Copy) {
+    into "${buildDir}/dist/libs"
+    from configurations.runtimeClasspath
+}
+
+jar.dependsOn(copyToLib)
+
+jar {
+    manifest {
+        attributes 'Implementation-Title': project.name,
+                'Main-Class': project.ext.mainClass,
+                'Class-Path': configurations.runtimeClasspath.collect { "libs/$it.name" }.join(' ')
+    }
+}
+
+task makeFatJar(type: Jar) {
+    manifest {
+        attributes 'Implementation-Title': project.name,
+                'Main-Class': project.ext.mainClass
+    }
+    archiveBaseName = project.name + '-fatjar'
+    from { configurations.compile.collect { it.isDirectory() ? it : zipTree(it) } }
+    with jar
+}
