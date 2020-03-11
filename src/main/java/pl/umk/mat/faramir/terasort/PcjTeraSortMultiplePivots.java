@@ -34,6 +34,8 @@ import org.pcj.Storage;
 @RegisterStorage(PcjTeraSortMultiplePivots.Vars.class)
 public class PcjTeraSortMultiplePivots implements StartPoint {
 
+    private static final long MEMORY_MAP_ELEMENT_COUNT = Long.parseLong(System.getProperty("memoryMap.elementCount", "1000000"));
+
     @Storage(PcjTeraSortMultiplePivots.class)
     enum Vars {
         sequencer, pivots, buckets
@@ -50,7 +52,7 @@ public class PcjTeraSortMultiplePivots implements StartPoint {
             return;
         }
 
-        PCJ.executionBuilder(PcjTeraSortOnePivot.class)
+        PCJ.executionBuilder(PcjTeraSortMultiplePivots.class)
                 .addProperty("inputFile", args[0])
                 .addProperty("outputFile", args[1])
                 .addProperty("pivotsByThread", args[2])
@@ -261,10 +263,10 @@ public class PcjTeraSortMultiplePivots implements StartPoint {
         }
 
         public Element readElement() throws IOException {
-            if (mappedByteBuffer == null || mappedByteBuffer.remaining() == 0) {
+            if (mappedByteBuffer == null || !mappedByteBuffer.hasRemaining()) {
                 mappedByteBuffer = input.map(FileChannel.MapMode.READ_ONLY,
                         input.position(),
-                        Math.min(input.size() - input.position(), 1_000_000 * recordLength));
+                        Math.min(input.size() - input.position(), MEMORY_MAP_ELEMENT_COUNT * recordLength));
             }
             mappedByteBuffer.get(tempKeyBytes);
             mappedByteBuffer.get(tempValueBytes);

@@ -36,6 +36,8 @@ import org.pcj.Storage;
 @RegisterStorage(PcjTeraSortOnePivot.Vars.class)
 public class PcjTeraSortOnePivot implements StartPoint {
 
+    private static final long MEMORY_MAP_ELEMENT_COUNT = Long.parseLong(System.getProperty("memoryMap.elementCount", "1000000"));
+
     @Storage(PcjTeraSortOnePivot.class)
     enum Vars {
         sequencer, pivots, buckets
@@ -264,8 +266,8 @@ public class PcjTeraSortOnePivot implements StartPoint {
         }
 
         public Element readElement() throws IOException {
-            if (mappedByteBuffer == null || mappedByteBuffer.remaining() == 0) {
-                long size = Math.min(input.size() - input.position(), 1_000_000 * recordLength);
+            if (mappedByteBuffer == null || !mappedByteBuffer.hasRemaining()) {
+                long size = Math.min(input.size() - input.position(), MEMORY_MAP_ELEMENT_COUNT * recordLength);
                 mappedByteBuffer = input.map(FileChannel.MapMode.READ_ONLY, input.position(), size);
                 minElementPos = input.position() / recordLength;
                 maxElementPos = minElementPos + size / recordLength;

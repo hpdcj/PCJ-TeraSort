@@ -34,6 +34,8 @@ import org.pcj.Storage;
 @RegisterStorage(PcjTeraSortOnePivotConcurrentWrite.Vars.class)
 public class PcjTeraSortOnePivotConcurrentWrite implements StartPoint {
 
+    private static final long MEMORY_MAP_ELEMENT_COUNT = Long.parseLong(System.getProperty("memoryMap.elementCount", "1000000"));
+
     @Storage(PcjTeraSortOnePivotConcurrentWrite.class)
     enum Vars {
         pivots, buckets, elements
@@ -264,7 +266,7 @@ public class PcjTeraSortOnePivotConcurrentWrite implements StartPoint {
 
         public Element readElement() throws IOException {
             if (mappedByteBuffer == null || !mappedByteBuffer.hasRemaining()) {
-                long size = Math.min(input.size() - input.position(), 1_000_000 * recordLength);
+                long size = Math.min(input.size() - input.position(), MEMORY_MAP_ELEMENT_COUNT * recordLength);
                 mappedByteBuffer = input.map(FileChannel.MapMode.READ_ONLY, input.position(), size);
                 minElementPos = input.position() / recordLength;
                 maxElementPos = minElementPos + size / recordLength;
@@ -300,7 +302,7 @@ public class PcjTeraSortOnePivotConcurrentWrite implements StartPoint {
 
         public void writeElement(Element element) throws IOException {
             if (mappedByteBuffer == null || !mappedByteBuffer.hasRemaining()) {
-                long size = Math.min((elementCount - writtenElements) * recordLength, 1_000_000 * recordLength);
+                long size = Math.min((elementCount - writtenElements) * recordLength, MEMORY_MAP_ELEMENT_COUNT * recordLength);
                 mappedByteBuffer = output.map(FileChannel.MapMode.READ_WRITE,
                         (startPosition + writtenElements) * recordLength,
                         size);

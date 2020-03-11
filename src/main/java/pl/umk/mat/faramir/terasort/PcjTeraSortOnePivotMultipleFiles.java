@@ -36,6 +36,8 @@ import org.pcj.Storage;
 @RegisterStorage(PcjTeraSortOnePivotMultipleFiles.Vars.class)
 public class PcjTeraSortOnePivotMultipleFiles implements StartPoint {
 
+    private static final long MEMORY_MAP_ELEMENT_COUNT = Long.parseLong(System.getProperty("memoryMap.elementCount", "1000000"));
+
     @Storage(PcjTeraSortOnePivotMultipleFiles.class)
     enum Vars {
         pivots, buckets
@@ -61,7 +63,7 @@ public class PcjTeraSortOnePivotMultipleFiles implements StartPoint {
     @Override
     public void main() throws Throwable {
         String inputFile = PCJ.getProperty("inputFile");
-        String outputFile = PCJ.getProperty("outputFile") + PCJ.myId();
+        String outputFile = PCJ.getProperty("outputFile") + "-part" + PCJ.myId();
         int sampleSize = Integer.parseInt(PCJ.getProperty("sampleSize"));
 
         System.out.printf(Locale.ENGLISH, "Input file: %s%n", inputFile);
@@ -258,8 +260,8 @@ public class PcjTeraSortOnePivotMultipleFiles implements StartPoint {
         }
 
         public Element readElement() throws IOException {
-            if (mappedByteBuffer == null || mappedByteBuffer.remaining() == 0) {
-                long size = Math.min(input.size() - input.position(), 1_000_000 * recordLength);
+            if (mappedByteBuffer == null || !mappedByteBuffer.hasRemaining()) {
+                long size = Math.min(input.size() - input.position(), MEMORY_MAP_ELEMENT_COUNT * recordLength);
                 mappedByteBuffer = input.map(FileChannel.MapMode.READ_ONLY, input.position(), size);
                 minElementPos = input.position() / recordLength;
                 maxElementPos = minElementPos + size / recordLength;
