@@ -70,6 +70,10 @@ public class PcjTeraSortOnePivotConcurrentWrite implements StartPoint {
         System.out.printf(Locale.ENGLISH, "Sample size is: %d%n", sampleSize);
 
         new File(outputFile).delete();
+        File parentFile = new File(outputFile).getParentFile();
+        if (parentFile != null) {
+            parentFile.mkdirs();
+        }
 
         long startTime = System.nanoTime();
         long readingStart = 0;
@@ -113,9 +117,9 @@ public class PcjTeraSortOnePivotConcurrentWrite implements StartPoint {
                 int pivotsSize = pivots.size();
                 int seekValue = Math.max(pivotsSize / PCJ.threadCount(), 1);
                 pivots = IntStream.range(1, Math.min(PCJ.threadCount(), pivotsSize))
-                                 .map(i -> i * seekValue)
-                                 .mapToObj(pivots::get)
-                                 .collect(Collectors.toList());
+                        .map(i -> i * seekValue)
+                        .mapToObj(pivots::get)
+                        .collect(Collectors.toList());
 
 
                 System.out.printf(Locale.ENGLISH, "Number of pivots: %d%n", pivots.size());
@@ -404,7 +408,7 @@ public class PcjTeraSortOnePivotConcurrentWrite implements StartPoint {
             }
             Element element = (Element) obj;
             return key.equals(element.key) &&
-                           value.equals(element.value);
+                    value.equals(element.value);
         }
 
         @Override
@@ -424,9 +428,9 @@ public class PcjTeraSortOnePivotConcurrentWrite implements StartPoint {
         @Override
         public String toString() {
             return "Element{" +
-                           "key=" + key +
-                           ", value=" + value +
-                           '}';
+                    "key=" + key +
+                    ", value=" + value +
+                    '}';
         }
     }
 }

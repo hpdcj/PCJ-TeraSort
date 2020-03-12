@@ -70,7 +70,15 @@ public class PcjTeraSortMultiplePivots implements StartPoint {
         String outputFile = PCJ.getProperty("outputFile");
         int numberOfPivotsByThread = Integer.parseInt(PCJ.getProperty("pivotsByThread"));
 
+        System.out.printf(Locale.ENGLISH, "Input file: %s%n", inputFile);
+        System.out.printf(Locale.ENGLISH, "Output file: %s%n", outputFile);
+        System.out.printf(Locale.ENGLISH, "Number of pivots by thread: %d%n", numberOfPivotsByThread);
+
         new File(outputFile).delete();
+        File parentFile = new File(outputFile).getParentFile();
+        if (parentFile != null) {
+            parentFile.mkdirs();
+        }
 
         long startTime = System.nanoTime();
         long readingStart = 0;
@@ -381,7 +389,7 @@ public class PcjTeraSortMultiplePivots implements StartPoint {
             }
             Element element = (Element) obj;
             return key.equals(element.key) &&
-                           value.equals(element.value);
+                    value.equals(element.value);
         }
 
         @Override
@@ -401,9 +409,9 @@ public class PcjTeraSortMultiplePivots implements StartPoint {
         @Override
         public String toString() {
             return "Element{" +
-                           "key=" + key +
-                           ", value=" + value +
-                           '}';
+                    "key=" + key +
+                    ", value=" + value +
+                    '}';
         }
     }
 }

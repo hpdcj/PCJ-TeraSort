@@ -1,14 +1,13 @@
 package pl.umk.mat.faramir.terasort;
 
+import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
+import java.io.DataInputStream;
 import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.Serializable;
 import java.io.UncheckedIOException;
-import java.nio.MappedByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -22,6 +21,7 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.apache.hadoop.fs.ContentSummary;
 import org.apache.hadoop.fs.FSDataInputStream;
+import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.pcj.PCJ;
@@ -40,8 +40,6 @@ import org.pcj.Storage;
  */
 @RegisterStorage(PcjTeraSortHdfsOnePivotMultipleFiles.Vars.class)
 public class PcjTeraSortHdfsOnePivotMultipleFiles implements StartPoint {
-
-    private static final long MEMORY_MAP_ELEMENT_COUNT = Long.parseLong(System.getProperty("memoryMap.elementCount", "1000000"));
 
     @Storage(PcjTeraSortHdfsOnePivotMultipleFiles.class)
     enum Vars {
@@ -129,9 +127,9 @@ public class PcjTeraSortHdfsOnePivotMultipleFiles implements StartPoint {
                 int pivotsSize = pivots.size();
                 int seekValue = Math.max(pivotsSize / PCJ.threadCount(), 1);
                 pivots = IntStream.range(1, Math.min(PCJ.threadCount(), pivotsSize))
-                                 .map(i -> i * seekValue)
-                                 .mapToObj(pivots::get)
-                                 .collect(Collectors.toList());
+                        .map(i -> i * seekValue)
+                        .mapToObj(pivots::get)
+                        .collect(Collectors.toList());
 
 
                 System.out.printf(Locale.ENGLISH, "Number of pivots: %d%n", pivots.size());
@@ -238,48 +236,102 @@ public class PcjTeraSortHdfsOnePivotMultipleFiles implements StartPoint {
 
         private static final int keyLength = 10;
         private static final int valueLength = recordLength - keyLength;
-        private final FSDataInputStream input;
-        private final long inputFileSize;
+        private final FSDataInputStream[] inputStreams;
+        private final long[] inputFileSizes;
+        private final long length;
         private final byte[] tempKeyBytes;
         private final byte[] tempValueBytes;
-        private MappedByteBuffer mappedByteBuffer;
+        private DataInputStream input;
+        private int inputIndex;
+        private long currentElementPos;
         private long minElementPos;
         private long maxElementPos;
 
         public TeraFileInput(FileSystem hdfsFileSystem, String inputFile) throws IOException {
             Path inputPath = new Path(inputFile);
-            ContentSummary inputSummary = hdfsFileSystem.getContentSummary(inputPath);
-            inputFileSize = inputSummary.getLength();
+            if (hdfsFileSystem.getFileStatus(inputPath).isDirectory()) {
+                FileStatus[] files = Arrays.stream(hdfsFileSystem.listStatus(inputPath))
+                        .filter(FileStatus::isFile)
+                        .filter(fs -> fs.getPath().getName().startsWith("part"))
+                        .toArray(FileStatus[]::new);
+                inputFileSizes = Arrays.stream(files)
+                        .map(FileStatus::getPath)
+                        .map(f -> {
+                            try {
+                                return hdfsFileSystem.getContentSummary(f);
+                            } catch (IOException e) {
+                                throw new UncheckedIOException(e);
+                            }
+                        })
+                        .mapToLong(ContentSummary::getLength).toArray();
+                length = Arrays.stream(inputFileSizes).sum() / recordLength;
 
-            input = hdfsFileSystem.open(inputPath);
+                inputStreams = Arrays.stream(files)
+                        .map(FileStatus::getPath)
+                        .map(f -> {
+                            try {
+                                return hdfsFileSystem.open(f);
+                            } catch (IOException e) {
+                                throw new UncheckedIOException(e);
+                            }
+                        })
+                        .toArray(FSDataInputStream[]::new);
+            } else {
+                inputFileSizes = new long[]{hdfsFileSystem.getContentSummary(inputPath).getLength()};
+                length = inputFileSizes[0];
+
+                inputStreams = new FSDataInputStream[]{hdfsFileSystem.open(inputPath)};
+            }
 
             tempKeyBytes = new byte[keyLength];
             tempValueBytes = new byte[valueLength];
 
-            mappedByteBuffer = null;
-            minElementPos = -1;
-            maxElementPos = -1;
+            input = null;
+            inputIndex = -1;
+            currentElementPos = 0;
+            minElementPos = 0;
+            maxElementPos = 0;
         }
 
         @Override
-        public void close() throws Exception {
-            input.close();
+        public void close() throws IOException {
+            for (FSDataInputStream inputStream : inputStreams) {
+                inputStream.close();
+            }
         }
 
         public long length() {
-            return inputFileSize / recordLength;
+            return length;
         }
 
         public void seek(long pos) throws IOException {
-            if (minElementPos <= pos && pos < maxElementPos) {
-                mappedByteBuffer.position((int) ((pos - minElementPos) * recordLength));
-            } else {
-                mappedByteBuffer = null;
+            if (pos < minElementPos || pos >= maxElementPos) {
+                long cur = 0L;
+                long p = pos * recordLength;
+                for (int i = 0; i < inputFileSizes.length; ++i) {
+                    cur += inputFileSizes[i];
+                    if (p < cur) {
+                        inputIndex = i;
+                        minElementPos = (cur - inputFileSizes[i]) / recordLength;
+                        maxElementPos = cur / recordLength;
+                        break;
+                    }
+                }
             }
-            input.seek(pos * recordLength);
+            inputStreams[inputIndex].seek((pos - minElementPos) * recordLength);
+            currentElementPos = pos;
+            input = new DataInputStream(new BufferedInputStream(inputStreams[inputIndex]));
         }
 
         public Element readElement() throws IOException {
+            if (currentElementPos == maxElementPos) {
+                inputIndex++;
+                minElementPos = maxElementPos;
+                maxElementPos += inputFileSizes[inputIndex] / recordLength;
+                inputStreams[inputIndex].seek(0);
+                input = new DataInputStream(new BufferedInputStream(inputStreams[inputIndex]));
+            }
+
             input.readFully(tempKeyBytes);
             input.readFully(tempValueBytes);
 
@@ -393,7 +445,7 @@ public class PcjTeraSortHdfsOnePivotMultipleFiles implements StartPoint {
             }
             Element element = (Element) obj;
             return key.equals(element.key) &&
-                           value.equals(element.value);
+                    value.equals(element.value);
         }
 
         @Override
@@ -413,9 +465,9 @@ public class PcjTeraSortHdfsOnePivotMultipleFiles implements StartPoint {
         @Override
         public String toString() {
             return "Element{" +
-                           "key=" + key +
-                           ", value=" + value +
-                           '}';
+                    "key=" + key +
+                    ", value=" + value +
+                    '}';
         }
     }
 }

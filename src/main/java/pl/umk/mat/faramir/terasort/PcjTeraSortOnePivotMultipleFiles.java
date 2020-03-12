@@ -1,29 +1,13 @@
 package pl.umk.mat.faramir.terasort;
 
-import java.io.BufferedOutputStream;
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.RandomAccessFile;
-import java.io.Serializable;
-import java.io.UncheckedIOException;
+import org.pcj.*;
+
+import java.io.*;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Locale;
-import java.util.Objects;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import org.pcj.PCJ;
-import org.pcj.PcjFuture;
-import org.pcj.RegisterStorage;
-import org.pcj.StartPoint;
-import org.pcj.Storage;
 
 /**
  * Third version of PcjTeraSort benchmark based on {@link PcjTeraSortOnePivot}.
@@ -71,9 +55,12 @@ public class PcjTeraSortOnePivotMultipleFiles implements StartPoint {
         System.out.printf(Locale.ENGLISH, "Output file: %s%n", outputFile);
         System.out.printf(Locale.ENGLISH, "Sample size is: %d%n", sampleSize);
 
-        File dir = new File(outputFile);
+        File dir = new File(outputDir);
         if (dir.isDirectory()) {
-            Arrays.stream(dir.listFiles()).forEach(File::delete);
+            File[] filesInDirectory = dir.listFiles();
+            if (filesInDirectory != null) {
+                Arrays.stream(filesInDirectory).forEach(File::delete);
+            }
         }
         dir.delete();
         dir.mkdirs();
@@ -120,9 +107,9 @@ public class PcjTeraSortOnePivotMultipleFiles implements StartPoint {
                 int pivotsSize = pivots.size();
                 int seekValue = Math.max(pivotsSize / PCJ.threadCount(), 1);
                 pivots = IntStream.range(1, Math.min(PCJ.threadCount(), pivotsSize))
-                                 .map(i -> i * seekValue)
-                                 .mapToObj(pivots::get)
-                                 .collect(Collectors.toList());
+                        .map(i -> i * seekValue)
+                        .mapToObj(pivots::get)
+                        .collect(Collectors.toList());
 
 
                 System.out.printf(Locale.ENGLISH, "Number of pivots: %d%n", pivots.size());
@@ -385,7 +372,7 @@ public class PcjTeraSortOnePivotMultipleFiles implements StartPoint {
             }
             Element element = (Element) obj;
             return key.equals(element.key) &&
-                           value.equals(element.value);
+                    value.equals(element.value);
         }
 
         @Override
@@ -405,9 +392,9 @@ public class PcjTeraSortOnePivotMultipleFiles implements StartPoint {
         @Override
         public String toString() {
             return "Element{" +
-                           "key=" + key +
-                           ", value=" + value +
-                           '}';
+                    "key=" + key +
+                    ", value=" + value +
+                    '}';
         }
     }
 }
