@@ -63,14 +63,20 @@ public class PcjTeraSortOnePivotMultipleFiles implements StartPoint {
     @Override
     public void main() throws Throwable {
         String inputFile = PCJ.getProperty("inputFile");
-        String outputFile = PCJ.getProperty("outputFile") + "-part" + PCJ.myId();
+        String outputDir = PCJ.getProperty("outputFile");
+        String outputFile = String.format("%s/part%05d", outputDir, PCJ.myId());
         int sampleSize = Integer.parseInt(PCJ.getProperty("sampleSize"));
 
         System.out.printf(Locale.ENGLISH, "Input file: %s%n", inputFile);
         System.out.printf(Locale.ENGLISH, "Output file: %s%n", outputFile);
         System.out.printf(Locale.ENGLISH, "Sample size is: %d%n", sampleSize);
 
-        new File(outputFile).delete();
+        File dir = new File(outputFile);
+        if (dir.isDirectory()) {
+            Arrays.stream(dir.listFiles()).forEach(File::delete);
+        }
+        dir.delete();
+        dir.mkdirs();
 
         long startTime = System.nanoTime();
         long readingStart = 0;

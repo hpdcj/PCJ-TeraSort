@@ -77,14 +77,15 @@ public class PcjTeraSortHdfsOnePivotMultipleFiles implements StartPoint {
         FileSystem hdfsFileSystem = FileSystem.get(conf);
 
         String inputFile = PCJ.getProperty("inputFile");
-        String outputFile = PCJ.getProperty("outputFile") + "-part" + PCJ.myId();
+        String outputDir = PCJ.getProperty("outputFile");
+        String outputFile = String.format("%s/part%05d", outputDir, PCJ.myId());
         int sampleSize = Integer.parseInt(PCJ.getProperty("sampleSize"));
 
         System.out.printf(Locale.ENGLISH, "Input file: %s%n", inputFile);
         System.out.printf(Locale.ENGLISH, "Output file: %s%n", outputFile);
         System.out.printf(Locale.ENGLISH, "Sample size is: %d%n", sampleSize);
 
-        new File(outputFile).delete();
+        hdfsFileSystem.delete(new Path(outputDir), true);
 
         long startTime = System.nanoTime();
         long readingStart = 0;
