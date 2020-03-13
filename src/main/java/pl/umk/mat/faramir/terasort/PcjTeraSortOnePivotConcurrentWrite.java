@@ -1,13 +1,23 @@
 package pl.umk.mat.faramir.terasort;
 
+import org.pcj.PCJ;
+import org.pcj.PcjFuture;
+import org.pcj.RegisterStorage;
+import org.pcj.StartPoint;
+import org.pcj.Storage;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.io.Serializable;
 import java.io.UncheckedIOException;
+import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.channels.SeekableByteChannel;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -17,11 +27,6 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import org.pcj.PCJ;
-import org.pcj.PcjFuture;
-import org.pcj.RegisterStorage;
-import org.pcj.StartPoint;
-import org.pcj.Storage;
 
 /**
  * Fourth version of PcjTeraSort benchmark based on {@link PcjTeraSortOnePivotMultipleFiles}.
@@ -81,6 +86,17 @@ public class PcjTeraSortOnePivotConcurrentWrite implements StartPoint {
 
         try (TeraFileInput input = new TeraFileInput(inputFile)) {
             long totalElements = input.length();
+
+            // create output file of specified size
+            try (SeekableByteChannel channel = Files.newByteChannel(Paths.get(outputFile),
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.TRUNCATE_EXISTING,
+                    StandardOpenOption.WRITE,
+                    StandardOpenOption.SPARSE)) {
+                channel.position(input.size() - 1);
+                channel.write(ByteBuffer.allocate(1));
+            }
+            Thread.sleep(10000);
 
             long localElementsCount = totalElements / PCJ.threadCount();
             long reminderElements = totalElements - localElementsCount * PCJ.threadCount();
@@ -259,6 +275,10 @@ public class PcjTeraSortOnePivotConcurrentWrite implements StartPoint {
             return input.size() / recordLength;
         }
 
+        public long size() throws IOException {
+            return input.size();
+        }
+
         public void seek(long pos) throws IOException {
             if (minElementPos <= pos && pos < maxElementPos) {
                 mappedByteBuffer.position((int) ((pos - minElementPos) * recordLength));
@@ -295,13 +315,14 @@ public class PcjTeraSortOnePivotConcurrentWrite implements StartPoint {
         private MappedByteBuffer mappedByteBuffer;
         private long writtenElements;
 
-        public TeraFileOutput(String outputFile, long startPosition, long elementCount) throws FileNotFoundException {
-            RandomAccessFile raf = new RandomAccessFile(outputFile, "rw");
+        public TeraFileOutput(String outputFile, long startPosition, long elementCount) throws IOException {
+            output = FileChannel.open(Paths.get(outputFile),
+                    StandardOpenOption.READ,
+                    StandardOpenOption.WRITE,
+                    StandardOpenOption.SPARSE);
             this.startPosition = startPosition;
             this.elementCount = elementCount;
             this.writtenElements = 0;
-
-            output = raf.getChannel();
         }
 
         public void writeElement(Element element) throws IOException {
