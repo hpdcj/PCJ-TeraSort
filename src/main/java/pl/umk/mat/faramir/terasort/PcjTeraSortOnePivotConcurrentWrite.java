@@ -71,10 +71,12 @@ public class PcjTeraSortOnePivotConcurrentWrite implements StartPoint {
         System.out.printf(Locale.ENGLISH, "Output file: %s%n", outputFile);
         System.out.printf(Locale.ENGLISH, "Sample size is: %d%n", sampleSize);
 
-        new File(outputFile).delete();
-        File parentFile = new File(outputFile).getParentFile();
-        if (parentFile != null) {
-            parentFile.mkdirs();
+        if (PCJ.myId() == 0) {
+            new File(outputFile).delete();
+            File parentFile = new File(outputFile).getParentFile();
+            if (parentFile != null) {
+                parentFile.mkdirs();
+            }
         }
 
         long startTime = System.nanoTime();
@@ -84,9 +86,11 @@ public class PcjTeraSortOnePivotConcurrentWrite implements StartPoint {
         try (TeraFileInput input = new TeraFileInput(inputFile)) {
             long totalElements = input.length();
 
-            // create output file of specified size
-            try (RandomAccessFile f = new RandomAccessFile(outputFile, "rw")) {
-                f.setLength(input.size());
+            if (PCJ.myId() == 0) {
+                // create output file of specified size
+                try (RandomAccessFile f = new RandomAccessFile(outputFile, "rw")) {
+                    f.setLength(input.size());
+                }
             }
 
             long localElementsCount = totalElements / PCJ.threadCount();

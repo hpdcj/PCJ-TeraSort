@@ -1,13 +1,11 @@
 package pl.umk.mat.faramir.terasort;
 
-import java.io.BufferedOutputStream;
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.RandomAccessFile;
-import java.io.Serializable;
-import java.io.UncheckedIOException;
+import org.pcj.PCJ;
+import org.pcj.PcjFuture;
+import org.pcj.RegisterStorage;
+import org.pcj.StartPoint;
+import org.pcj.Storage;
+import java.io.*;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
@@ -19,11 +17,6 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import org.pcj.PCJ;
-import org.pcj.PcjFuture;
-import org.pcj.RegisterStorage;
-import org.pcj.StartPoint;
-import org.pcj.Storage;
 
 /**
  * Second version of PcjTeraSort benchmark based on {@link PcjTeraSortMultiplePivots}.
@@ -75,10 +68,12 @@ public class PcjTeraSortOnePivot implements StartPoint {
         System.out.printf(Locale.ENGLISH, "Output file: %s%n", outputFile);
         System.out.printf(Locale.ENGLISH, "Sample size is: %d%n", sampleSize);
 
-        new File(outputFile).delete();
-        File parentFile = new File(outputFile).getParentFile();
-        if (parentFile != null) {
-            parentFile.mkdirs();
+        if (PCJ.myId() == 0) {
+            new File(outputFile).delete();
+            File parentFile = new File(outputFile).getParentFile();
+            if (parentFile != null) {
+                parentFile.mkdirs();
+            }
         }
 
         long startTime = System.nanoTime();

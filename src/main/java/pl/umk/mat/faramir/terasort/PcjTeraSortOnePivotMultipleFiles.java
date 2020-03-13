@@ -1,11 +1,20 @@
 package pl.umk.mat.faramir.terasort;
 
-import org.pcj.*;
-
+import org.pcj.PCJ;
+import org.pcj.PcjFuture;
+import org.pcj.RegisterStorage;
+import org.pcj.StartPoint;
+import org.pcj.Storage;
 import java.io.*;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -55,15 +64,17 @@ public class PcjTeraSortOnePivotMultipleFiles implements StartPoint {
         System.out.printf(Locale.ENGLISH, "Output file: %s%n", outputFile);
         System.out.printf(Locale.ENGLISH, "Sample size is: %d%n", sampleSize);
 
-        File dir = new File(outputDir);
-        if (dir.isDirectory()) {
-            File[] filesInDirectory = dir.listFiles();
-            if (filesInDirectory != null) {
-                Arrays.stream(filesInDirectory).forEach(File::delete);
+        if (PCJ.myId() == 0) {
+            File dir = new File(outputDir);
+            if (dir.isDirectory()) {
+                File[] filesInDirectory = dir.listFiles();
+                if (filesInDirectory != null) {
+                    Arrays.stream(filesInDirectory).forEach(File::delete);
+                }
             }
+            dir.delete();
+            dir.mkdirs();
         }
-        dir.delete();
-        dir.mkdirs();
 
         long startTime = System.nanoTime();
         long readingStart = 0;

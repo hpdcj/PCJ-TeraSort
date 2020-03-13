@@ -1,13 +1,16 @@
 package pl.umk.mat.faramir.terasort;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
-import java.io.DataInputStream;
-import java.io.File;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.io.Serializable;
-import java.io.UncheckedIOException;
+import org.apache.hadoop.fs.ContentSummary;
+import org.apache.hadoop.fs.FSDataInputStream;
+import org.apache.hadoop.fs.FileStatus;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+import org.pcj.PCJ;
+import org.pcj.PcjFuture;
+import org.pcj.RegisterStorage;
+import org.pcj.StartPoint;
+import org.pcj.Storage;
+import java.io.*;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -19,16 +22,6 @@ import java.util.function.Predicate;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import org.apache.hadoop.fs.ContentSummary;
-import org.apache.hadoop.fs.FSDataInputStream;
-import org.apache.hadoop.fs.FileStatus;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.Path;
-import org.pcj.PCJ;
-import org.pcj.PcjFuture;
-import org.pcj.RegisterStorage;
-import org.pcj.StartPoint;
-import org.pcj.Storage;
 
 /**
  * Fifth version of PcjTeraSort benchmark based on {@link PcjTeraSortOnePivotMultipleFiles}.
@@ -83,7 +76,9 @@ public class PcjTeraSortHdfsOnePivotMultipleFiles implements StartPoint {
         System.out.printf(Locale.ENGLISH, "Output file: %s%n", outputFile);
         System.out.printf(Locale.ENGLISH, "Sample size is: %d%n", sampleSize);
 
-        hdfsFileSystem.delete(new Path(outputDir), true);
+        if (PCJ.myId() == 0) {
+            hdfsFileSystem.delete(new Path(outputDir), true);
+        }
 
         long startTime = System.nanoTime();
         long readingStart = 0;
