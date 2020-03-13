@@ -11,11 +11,8 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.io.Serializable;
 import java.io.UncheckedIOException;
-import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.channels.SeekableByteChannel;
-import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
@@ -88,15 +85,9 @@ public class PcjTeraSortOnePivotConcurrentWrite implements StartPoint {
             long totalElements = input.length();
 
             // create output file of specified size
-            try (SeekableByteChannel channel = Files.newByteChannel(Paths.get(outputFile),
-                    StandardOpenOption.CREATE,
-                    StandardOpenOption.TRUNCATE_EXISTING,
-                    StandardOpenOption.WRITE,
-                    StandardOpenOption.SPARSE)) {
-                channel.position(input.size() - 1);
-                channel.write(ByteBuffer.allocate(1));
+            try (RandomAccessFile f = new RandomAccessFile(outputFile, "rw")) {
+                f.setLength(input.size());
             }
-            Thread.sleep(10000);
 
             long localElementsCount = totalElements / PCJ.threadCount();
             long reminderElements = totalElements - localElementsCount * PCJ.threadCount();
