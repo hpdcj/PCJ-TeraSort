@@ -60,11 +60,11 @@ public class PcjTeraSortOnePivotMultipleFiles implements StartPoint {
         String outputFile = String.format("%s/part%05d", outputDir, PCJ.myId());
         int sampleSize = Integer.parseInt(PCJ.getProperty("sampleSize"));
 
-        System.out.printf(Locale.ENGLISH, "Input file: %s%n", inputFile);
-        System.out.printf(Locale.ENGLISH, "Output file: %s%n", outputFile);
-        System.out.printf(Locale.ENGLISH, "Sample size is: %d%n", sampleSize);
-
         if (PCJ.myId() == 0) {
+            System.out.printf(Locale.ENGLISH, "Input file: %s%n", inputFile);
+            System.out.printf(Locale.ENGLISH, "Output file: %s%n", outputFile);
+            System.out.printf(Locale.ENGLISH, "Sample size is: %d%n", sampleSize);
+
             File dir = new File(outputDir);
             if (dir.isDirectory()) {
                 File[] filesInDirectory = dir.listFiles();

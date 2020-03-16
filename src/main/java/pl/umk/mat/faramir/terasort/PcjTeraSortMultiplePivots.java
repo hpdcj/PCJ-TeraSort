@@ -63,11 +63,11 @@ public class PcjTeraSortMultiplePivots implements StartPoint {
         String outputFile = PCJ.getProperty("outputFile");
         int numberOfPivotsByThread = Integer.parseInt(PCJ.getProperty("pivotsByThread"));
 
-        System.out.printf(Locale.ENGLISH, "Input file: %s%n", inputFile);
-        System.out.printf(Locale.ENGLISH, "Output file: %s%n", outputFile);
-        System.out.printf(Locale.ENGLISH, "Number of pivots by thread: %d%n", numberOfPivotsByThread);
-
         if (PCJ.myId() == 0) {
+            System.out.printf(Locale.ENGLISH, "Input file: %s%n", inputFile);
+            System.out.printf(Locale.ENGLISH, "Output file: %s%n", outputFile);
+            System.out.printf(Locale.ENGLISH, "Number of pivots by thread: %d%n", numberOfPivotsByThread);
+
             new File(outputFile).delete();
             File parentFile = new File(outputFile).getParentFile();
             if (parentFile != null) {
