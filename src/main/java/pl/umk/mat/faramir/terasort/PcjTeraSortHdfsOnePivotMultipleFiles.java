@@ -10,7 +10,11 @@ import org.pcj.PcjFuture;
 import org.pcj.RegisterStorage;
 import org.pcj.StartPoint;
 import org.pcj.Storage;
-import java.io.*;
+import java.io.File;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.Serializable;
+import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -74,7 +78,7 @@ public class PcjTeraSortHdfsOnePivotMultipleFiles implements StartPoint {
 
         if (PCJ.myId() == 0) {
             System.out.printf(Locale.ENGLISH, "Input file: %s%n", inputFile);
-            System.out.printf(Locale.ENGLISH, "Output file: %s%n", outputFile);
+            System.out.printf(Locale.ENGLISH, "Output dir: %s%n", outputDir);
             System.out.printf(Locale.ENGLISH, "Sample size is: %d%n", sampleSize);
 
             hdfsFileSystem.delete(new Path(outputDir), true);
@@ -167,8 +171,8 @@ public class PcjTeraSortHdfsOnePivotMultipleFiles implements StartPoint {
             for (int i = 0; i < localBuckets.length; i++) {
                 Element[] bucket = localBuckets[i].toArray(new Element[0]);
 
-                System.err.printf(Locale.ENGLISH, "Thread %3d will be sending to %3d - %5d elements%n",
-                        PCJ.myId(), i, bucket.length);
+//                System.err.printf(Locale.ENGLISH, "Thread %3d will be sending to %3d - %5d elements%n",
+//                        PCJ.myId(), i, bucket.length);
 
                 if (PCJ.myId() != i) {
                     PCJ.asyncPut(bucket, i, Vars.buckets, PCJ.myId());
@@ -231,18 +235,20 @@ public class PcjTeraSortHdfsOnePivotMultipleFiles implements StartPoint {
 
         private static final int keyLength = 10;
         private static final int valueLength = recordLength - keyLength;
-        private final FSDataInputStream[] inputStreams;
+        private final FileSystem hdfsFileSystem;
+        private final Path[] inputPaths;
         private final long[] inputFileSizes;
         private final long length;
         private final byte[] tempKeyBytes;
         private final byte[] tempValueBytes;
-        private DataInputStream input;
+        private FSDataInputStream input;
         private int inputIndex;
         private long currentElementPos;
         private long minElementPos;
         private long maxElementPos;
 
         public TeraFileInput(FileSystem hdfsFileSystem, String inputFile) throws IOException {
+            this.hdfsFileSystem = hdfsFileSystem;
             Path inputPath = new Path(inputFile);
             if (hdfsFileSystem.getFileStatus(inputPath).isDirectory()) {
                 FileStatus[] files = Arrays.stream(hdfsFileSystem.listStatus(inputPath))
@@ -261,21 +267,13 @@ public class PcjTeraSortHdfsOnePivotMultipleFiles implements StartPoint {
                         .mapToLong(ContentSummary::getLength).toArray();
                 length = Arrays.stream(inputFileSizes).sum() / recordLength;
 
-                inputStreams = Arrays.stream(files)
+                inputPaths = Arrays.stream(files)
                         .map(FileStatus::getPath)
-                        .map(f -> {
-                            try {
-                                return hdfsFileSystem.open(f);
-                            } catch (IOException e) {
-                                throw new UncheckedIOException(e);
-                            }
-                        })
-                        .toArray(FSDataInputStream[]::new);
+                        .toArray(Path[]::new);
             } else {
                 inputFileSizes = new long[]{hdfsFileSystem.getContentSummary(inputPath).getLength()};
                 length = inputFileSizes[0];
-
-                inputStreams = new FSDataInputStream[]{hdfsFileSystem.open(inputPath)};
+                inputPaths = new Path[]{inputPath};
             }
 
             tempKeyBytes = new byte[keyLength];
@@ -290,9 +288,7 @@ public class PcjTeraSortHdfsOnePivotMultipleFiles implements StartPoint {
 
         @Override
         public void close() throws IOException {
-            for (FSDataInputStream inputStream : inputStreams) {
-                inputStream.close();
-            }
+            input.close();
         }
 
         public long length() {
@@ -312,10 +308,13 @@ public class PcjTeraSortHdfsOnePivotMultipleFiles implements StartPoint {
                         break;
                     }
                 }
+                if (input != null) {
+                    input.close();
+                }
+                input = hdfsFileSystem.open(inputPaths[inputIndex]);
             }
-            inputStreams[inputIndex].seek((pos - minElementPos) * recordLength);
+            input.seek((pos - minElementPos) * recordLength);
             currentElementPos = pos;
-            input = new DataInputStream(new BufferedInputStream(inputStreams[inputIndex]));
         }
 
         public Element readElement() throws IOException {
@@ -323,8 +322,10 @@ public class PcjTeraSortHdfsOnePivotMultipleFiles implements StartPoint {
                 inputIndex++;
                 minElementPos = maxElementPos;
                 maxElementPos += inputFileSizes[inputIndex] / recordLength;
-                inputStreams[inputIndex].seek(0);
-                input = new DataInputStream(new BufferedInputStream(inputStreams[inputIndex]));
+                if (input != null) {
+                    input.close();
+                }
+                input = hdfsFileSystem.open(inputPaths[inputIndex]);
             }
 
             input.readFully(tempKeyBytes);
@@ -335,17 +336,19 @@ public class PcjTeraSortHdfsOnePivotMultipleFiles implements StartPoint {
     }
 
     public static class TeraFileOutput implements AutoCloseable {
-        private final BufferedOutputStream output;
+        private final OutputStream output;
 
         public TeraFileOutput(FileSystem hdfsFileSystem, String outputFile) throws IOException {
             Path outputPath = new Path(outputFile);
-            OutputStream outputStream = hdfsFileSystem.create(outputPath, true).getWrappedStream();
-            output = new BufferedOutputStream(outputStream);
+            output = hdfsFileSystem.create(outputPath, true);
         }
 
         public void writeElement(Element element) throws IOException {
-            output.write(element.getKey().value);
-            output.write(element.getValue().value);
+            byte[] key = element.getKey().value;
+            output.write(key, 0, key.length);
+
+            byte[] value = element.getValue().value;
+            output.write(value, 0, value.length);
         }
 
         public void writeElements(Element[] elements) throws UncheckedIOException {
