@@ -109,8 +109,8 @@ public class PcjTeraSortHdfsOnePivotMultipleFiles implements StartPoint {
             // generate pivots (a unique set of keys at random positions: k0<k1<k2<...<k(n-1))
             int samplesByThread = (sampleSize + PCJ.threadCount() - (PCJ.myId() + 1)) / PCJ.threadCount();
 
+            input.seek(startElement);
             for (int i = 0; i < samplesByThread; ++i) {
-                input.seek(startElement + i * (localElementsCount / samplesByThread));
                 Element pivot = input.readElement();
                 pivots.add(pivot);
             }
@@ -251,12 +251,13 @@ public class PcjTeraSortHdfsOnePivotMultipleFiles implements StartPoint {
             this.hdfsFileSystem = hdfsFileSystem;
             Path inputPath = new Path(inputFile);
             if (hdfsFileSystem.getFileStatus(inputPath).isDirectory()) {
-                FileStatus[] files = Arrays.stream(hdfsFileSystem.listStatus(inputPath))
+                inputPaths = Arrays.stream(hdfsFileSystem.listStatus(inputPath))
                         .filter(FileStatus::isFile)
                         .filter(fs -> fs.getPath().getName().startsWith("part"))
-                        .toArray(FileStatus[]::new);
-                inputFileSizes = Arrays.stream(files)
                         .map(FileStatus::getPath)
+                        .toArray(Path[]::new);
+
+                inputFileSizes = Arrays.stream(inputPaths)
                         .map(f -> {
                             try {
                                 return hdfsFileSystem.getContentSummary(f);
@@ -265,15 +266,12 @@ public class PcjTeraSortHdfsOnePivotMultipleFiles implements StartPoint {
                             }
                         })
                         .mapToLong(ContentSummary::getLength).toArray();
-                length = Arrays.stream(inputFileSizes).sum() / recordLength;
 
-                inputPaths = Arrays.stream(files)
-                        .map(FileStatus::getPath)
-                        .toArray(Path[]::new);
+                length = Arrays.stream(inputFileSizes).sum() / recordLength;
             } else {
+                inputPaths = new Path[]{inputPath};
                 inputFileSizes = new long[]{hdfsFileSystem.getContentSummary(inputPath).getLength()};
                 length = inputFileSizes[0];
-                inputPaths = new Path[]{inputPath};
             }
 
             tempKeyBytes = new byte[keyLength];
@@ -318,7 +316,7 @@ public class PcjTeraSortHdfsOnePivotMultipleFiles implements StartPoint {
         }
 
         public Element readElement() throws IOException {
-            if (currentElementPos == maxElementPos) {
+            if (currentElementPos >= maxElementPos) {
                 inputIndex++;
                 minElementPos = maxElementPos;
                 maxElementPos += inputFileSizes[inputIndex] / recordLength;

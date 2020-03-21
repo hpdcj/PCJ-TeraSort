@@ -98,8 +98,8 @@ public class PcjTeraSortMultiplePivots implements StartPoint {
             long endElement = startElement + localElementsCount;
 
             // generate pivots (a unique set of keys at random positions: k0<k1<k2<...<k(n-1))
+            input.seek(startElement);
             for (int i = 0; i < numberOfPivotsByThread; ++i) {
-                input.seek(startElement + i * (localElementsCount / numberOfPivotsByThread));
                 Element pivot = input.readElement();
                 pivots.add(pivot);
             }

@@ -111,8 +111,8 @@ public class PcjTeraSortOnePivotConcurrentWrite implements StartPoint {
             // generate pivots (a unique set of keys at random positions: k0<k1<k2<...<k(n-1))
             int samplesByThread = (sampleSize + PCJ.threadCount() - (PCJ.myId() + 1)) / PCJ.threadCount();
 
+            input.seek(startElement);
             for (int i = 0; i < samplesByThread; ++i) {
-                input.seek(startElement + i * (localElementsCount / samplesByThread));
                 Element pivot = input.readElement();
                 pivots.add(pivot);
             }
