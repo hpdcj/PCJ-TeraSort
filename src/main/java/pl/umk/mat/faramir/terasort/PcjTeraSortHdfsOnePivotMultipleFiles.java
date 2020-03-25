@@ -206,8 +206,14 @@ public class PcjTeraSortHdfsOnePivotMultipleFiles implements StartPoint {
         long savingStart = System.nanoTime();
 
         System.out.printf(Locale.ENGLISH, "Thread %d started saving buckets to file%n", PCJ.myId());
-        try (TeraFileOutput output = new TeraFileOutput(hdfsFileSystem, outputFile)) {
-            output.writeElements(sortedBuckets);
+        while (true) {
+            try (TeraFileOutput output = new TeraFileOutput(hdfsFileSystem, outputFile)) {
+                output.writeElements(sortedBuckets);
+                break;
+            } catch (Exception e) {
+                System.err.println("Exception " + e.toString() + " on Thread " + PCJ.myId() + ". Retrying after 5s.");
+                Thread.sleep(5000);
+            }
         }
 
         System.out.printf(Locale.ENGLISH, "Thread %d finished saving %d elements in %.7f seconds%n",
