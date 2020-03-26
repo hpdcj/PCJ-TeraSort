@@ -8,6 +8,7 @@ import org.pcj.Storage;
 import java.io.*;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -42,12 +43,12 @@ public class PcjTeraSortOnePivotMultipleFiles implements StartPoint {
 
     public static void main(String[] args) throws IOException {
         if (args.length < 4) {
-            System.err.println("Parameters: <input-file> <output-file> <total-pivots> <nodes-file>");
+            System.err.println("Parameters: <input-file> <output-file-prefix> <total-pivots> <nodes-file>");
             return;
         }
         PCJ.executionBuilder(PcjTeraSortOnePivotMultipleFiles.class)
                 .addProperty("inputFile", args[0])
-                .addProperty("outputFile", args[1])
+                .addProperty("outputDir", args[1])
                 .addProperty("sampleSize", args[2])
                 .addNodes(new File(args[3]))
                 .start();
@@ -56,24 +57,29 @@ public class PcjTeraSortOnePivotMultipleFiles implements StartPoint {
     @Override
     public void main() throws Throwable {
         String inputFile = PCJ.getProperty("inputFile");
-        String outputDir = PCJ.getProperty("outputFile");
-        String outputFile = String.format("%s/part%05d", outputDir, PCJ.myId());
+        String outputFilePrefix = PCJ.getProperty("outputDir");
+        String outputFileSuffix = "-part-";
+        String outputFileName = String.format("%s%s%05d", outputFilePrefix, outputFileSuffix, PCJ.myId());
         int sampleSize = Integer.parseInt(PCJ.getProperty("sampleSize"));
 
         if (PCJ.myId() == 0) {
             System.out.printf(Locale.ENGLISH, "Input file: %s%n", inputFile);
-            System.out.printf(Locale.ENGLISH, "Output file: %s%n", outputFile);
+            System.out.printf(Locale.ENGLISH, "Output file prefix: %s%n", outputFilePrefix);
             System.out.printf(Locale.ENGLISH, "Sample size is: %d%n", sampleSize);
 
-            File dir = new File(outputDir);
-            if (dir.isDirectory()) {
-                File[] filesInDirectory = dir.listFiles();
-                if (filesInDirectory != null) {
-                    Arrays.stream(filesInDirectory).forEach(File::delete);
-                }
+            String namePrefix = new File(outputFilePrefix).getName() + outputFileSuffix;
+
+            File parentDir = new File(outputFileName).getParentFile();
+            if (parentDir != null) {
+                parentDir.mkdirs();
+            } else {
+                parentDir = new File(".");
             }
-            dir.delete();
-            dir.mkdirs();
+
+            File[] files = parentDir.listFiles((dir, name) -> name.startsWith(namePrefix));
+            if (files != null) {
+                Arrays.stream(files).forEach(File::delete);
+            }
         }
 
         long startTime = System.nanoTime();
@@ -198,7 +204,7 @@ public class PcjTeraSortOnePivotMultipleFiles implements StartPoint {
         long savingStart = System.nanoTime();
 
         System.out.printf(Locale.ENGLISH, "Thread %d started saving buckets to file%n", PCJ.myId());
-        try (TeraFileOutput output = new TeraFileOutput(outputFile)) {
+        try (TeraFileOutput output = new TeraFileOutput(outputFileName)) {
             output.writeElements(sortedBuckets);
         }
 
