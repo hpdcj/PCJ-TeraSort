@@ -170,8 +170,8 @@ public class PcjTeraSortMultiplePivots implements StartPoint {
 
                 Element[] bucket = localBuckets[i].toArray(new Element[0]);
 
-                //    System.err.printf(Locale.ENGLISH, "Thread %3d will be sending to %3d packNo %d - %5d elements (localBucket=%5d)%n",
-                //                            PCJ.myId(), threadId, packNo, bucket.length, i);
+//                System.err.printf(Locale.ENGLISH, "Thread %3d will be sending to %3d packNo %d - %5d elements (localBucket=%5d)%n",
+//                        PCJ.myId(), threadId, packNo, bucket.length, i);
 
                 if (threadId != PCJ.myId()) {
                     PCJ.asyncPut(bucket, threadId, Vars.buckets, packNo, PCJ.myId());

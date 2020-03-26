@@ -173,8 +173,8 @@ public class PcjTeraSortOnePivotConcurrentWrite implements StartPoint {
             for (int i = 0; i < localBuckets.length; i++) {
                 Element[] bucket = localBuckets[i].toArray(new Element[0]);
 
-                System.err.printf(Locale.ENGLISH, "Thread %3d will be sending to %3d - %5d elements%n",
-                        PCJ.myId(), i, bucket.length);
+//                System.err.printf(Locale.ENGLISH, "Thread %3d will be sending to %3d - %5d elements%n",
+//                        PCJ.myId(), i, bucket.length);
 
                 if (PCJ.myId() != i) {
                     PCJ.asyncPut(bucket, i, Vars.buckets, PCJ.myId());
