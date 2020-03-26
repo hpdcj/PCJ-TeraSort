@@ -1,20 +1,13 @@
 package pl.umk.mat.faramir.terasort;
 
-import org.apache.hadoop.fs.ContentSummary;
-import org.apache.hadoop.fs.FSDataInputStream;
-import org.apache.hadoop.fs.FileStatus;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.Path;
 import org.pcj.PCJ;
 import org.pcj.PcjFuture;
 import org.pcj.RegisterStorage;
 import org.pcj.StartPoint;
 import org.pcj.Storage;
-import java.io.File;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.io.Serializable;
-import java.io.UncheckedIOException;
+import java.io.*;
+import java.nio.MappedByteBuffer;
+import java.nio.channels.FileChannel;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -23,25 +16,26 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.function.BiConsumer;
-import java.util.function.Predicate;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 /**
- * Sixth version of PcjTeraSort benchmark based on {@link PcjTeraSortHdfsOnePivotMultipleFiles}.
+ * Seventh version of PcjTeraSort benchmark based on {@link PcjTeraSortOnePivotMultipleFiles}
+ * and {@link PcjTeraSortHdfsConcurrentSend}.
  * <p>
  * Each thread has  one pivot (totalNumberOfPivots = threadCount),
  * with exception when number of threads is greater than number of elements in input.
  * <p>
  * The data is sent to other threads while reading input (overlapping).
  * <p>
- * Each thread reads input from HDFS and writes output to separate file on HDFS.
+ * Each thread writes output to separate files.
  */
-@RegisterStorage(PcjTeraSortHdfsConcurrentSend.Vars.class)
-public class PcjTeraSortHdfsConcurrentSend implements StartPoint {
+@RegisterStorage(PcjTeraSortConcurrentSend.Vars.class)
+public class PcjTeraSortConcurrentSend implements StartPoint {
 
-    @Storage(PcjTeraSortHdfsConcurrentSend.class)
+    private static final long MEMORY_MAP_ELEMENT_COUNT = Long.parseLong(System.getProperty("memoryMap.elementCount", "1000000"));
+
+    @Storage(PcjTeraSortConcurrentSend.class)
     enum Vars {
         pivots, buckets, finishedSending
     }
@@ -54,12 +48,12 @@ public class PcjTeraSortHdfsConcurrentSend implements StartPoint {
 
     public static void main(String[] args) throws IOException {
         if (args.length < 4) {
-            System.err.println("Parameters: <input-file> <output-file> <total-pivots> <nodes-file>");
+            System.err.println("Parameters: <input-file> <output-file-prefix> <total-pivots> <nodes-file>");
             return;
         }
-        PCJ.executionBuilder(PcjTeraSortHdfsConcurrentSend.class)
+        PCJ.executionBuilder(PcjTeraSortConcurrentSend.class)
                 .addProperty("inputFile", args[0])
-                .addProperty("outputFile", args[1])
+                .addProperty("outputDir", args[1])
                 .addProperty("sampleSize", args[2])
                 .addNodes(new File(args[3]))
                 .start();
@@ -67,33 +61,37 @@ public class PcjTeraSortHdfsConcurrentSend implements StartPoint {
 
     @Override
     public void main() throws Throwable {
-        org.apache.hadoop.conf.Configuration conf = new org.apache.hadoop.conf.Configuration();
-        String hdfsConf = System.getProperty("hdfsConf", "");
-        String[] hdfsConfigurations = hdfsConf.isEmpty() ? new String[0] : hdfsConf.split(Pattern.quote(File.pathSeparator));
-        Arrays.stream(hdfsConfigurations)
-                .filter(((Predicate<String>) String::isEmpty).negate())
-                .map(Path::new)
-                .forEach(conf::addResource);
-        FileSystem hdfsFileSystem = FileSystem.get(conf);
-
         String inputFile = PCJ.getProperty("inputFile");
-        String outputDir = PCJ.getProperty("outputFile");
-        String outputFile = String.format("%s/part%05d", outputDir, PCJ.myId());
+        String outputFilePrefix = PCJ.getProperty("outputDir");
+        String outputFileSuffix = "-part-";
+        String outputFileName = String.format("%s%s%05d", outputFilePrefix, outputFileSuffix, PCJ.myId());
         int sampleSize = Integer.parseInt(PCJ.getProperty("sampleSize"));
 
         if (PCJ.myId() == 0) {
             System.out.printf(Locale.ENGLISH, "Input file: %s%n", inputFile);
-            System.out.printf(Locale.ENGLISH, "Output dir: %s%n", outputDir);
+            System.out.printf(Locale.ENGLISH, "Output file prefix: %s%n", outputFilePrefix);
             System.out.printf(Locale.ENGLISH, "Sample size is: %d%n", sampleSize);
 
-            hdfsFileSystem.delete(new Path(outputDir), true);
+            String namePrefix = new File(outputFilePrefix).getName() + outputFileSuffix;
+
+            File parentDir = new File(outputFileName).getParentFile();
+            if (parentDir != null) {
+                parentDir.mkdirs();
+            } else {
+                parentDir = new File(".");
+            }
+
+            File[] files = parentDir.listFiles((dir, name) -> name.startsWith(namePrefix));
+            if (files != null) {
+                Arrays.stream(files).forEach(File::delete);
+            }
         }
 
         long startTime = System.nanoTime();
         long readingStart = 0;
         long sendingStart = 0;
 
-        try (TeraFileInput input = new TeraFileInput(hdfsFileSystem, inputFile)) {
+        try (TeraFileInput input = new TeraFileInput(inputFile)) {
             long totalElements = input.length();
 
             long localElementsCount = totalElements / PCJ.threadCount();
@@ -222,15 +220,8 @@ public class PcjTeraSortHdfsConcurrentSend implements StartPoint {
         long savingStart = System.nanoTime();
 
         System.out.printf(Locale.ENGLISH, "Thread %d started saving buckets to file%n", PCJ.myId());
-
-        while (true) {
-            try (TeraFileOutput output = new TeraFileOutput(hdfsFileSystem, outputFile)) {
-                output.writeElements(sortedBuckets);
-                break;
-            } catch (Exception e) {
-                System.err.println("Exception " + e.toString() + " on Thread " + PCJ.myId() + ". Retrying after 5s.");
-                Thread.sleep(5000);
-            }
+        try (TeraFileOutput output = new TeraFileOutput(outputFileName)) {
+            output.writeElements(sortedBuckets);
         }
 
         System.out.printf(Locale.ENGLISH, "Thread %d finished saving %d elements in %.7f seconds%n",
@@ -258,118 +249,68 @@ public class PcjTeraSortHdfsConcurrentSend implements StartPoint {
 
         private static final int keyLength = 10;
         private static final int valueLength = recordLength - keyLength;
-        private final FileSystem hdfsFileSystem;
-        private final Path[] inputPaths;
-        private final long[] inputFileSizes;
-        private final long length;
+        private final FileChannel input;
         private final byte[] tempKeyBytes;
         private final byte[] tempValueBytes;
-        private FSDataInputStream input;
-        private int inputIndex;
-        private long currentElementPos;
+        private MappedByteBuffer mappedByteBuffer;
         private long minElementPos;
         private long maxElementPos;
 
-        public TeraFileInput(FileSystem hdfsFileSystem, String inputFile) throws IOException {
-            this.hdfsFileSystem = hdfsFileSystem;
-            Path inputPath = new Path(inputFile);
-            if (hdfsFileSystem.getFileStatus(inputPath).isDirectory()) {
-                inputPaths = Arrays.stream(hdfsFileSystem.listStatus(inputPath))
-                        .filter(FileStatus::isFile)
-                        .filter(fs -> fs.getPath().getName().startsWith("part"))
-                        .map(FileStatus::getPath)
-                        .toArray(Path[]::new);
-
-                inputFileSizes = Arrays.stream(inputPaths)
-                        .map(f -> {
-                            try {
-                                return hdfsFileSystem.getContentSummary(f);
-                            } catch (IOException e) {
-                                throw new UncheckedIOException(e);
-                            }
-                        })
-                        .mapToLong(ContentSummary::getLength).toArray();
-
-                length = Arrays.stream(inputFileSizes).sum() / recordLength;
-            } else {
-                inputPaths = new Path[]{inputPath};
-                inputFileSizes = new long[]{hdfsFileSystem.getContentSummary(inputPath).getLength()};
-                length = inputFileSizes[0];
-            }
-
+        public TeraFileInput(String inputFile) throws FileNotFoundException {
+            RandomAccessFile raf = new RandomAccessFile(inputFile, "r");
+            input = raf.getChannel();
             tempKeyBytes = new byte[keyLength];
             tempValueBytes = new byte[valueLength];
 
-            input = null;
-            inputIndex = -1;
-            currentElementPos = 0;
-            minElementPos = 0;
-            maxElementPos = 0;
+            mappedByteBuffer = null;
+            minElementPos = -1;
+            maxElementPos = -1;
         }
 
         @Override
-        public void close() throws IOException {
+        public void close() throws Exception {
             input.close();
         }
 
-        public long length() {
-            return length;
+        public long length() throws IOException {
+            return input.size() / recordLength;
         }
 
         public void seek(long pos) throws IOException {
-            if (pos < minElementPos || pos >= maxElementPos) {
-                long cur = 0L;
-                long p = pos * recordLength;
-                for (int i = 0; i < inputFileSizes.length; ++i) {
-                    cur += inputFileSizes[i];
-                    if (p < cur) {
-                        inputIndex = i;
-                        minElementPos = (cur - inputFileSizes[i]) / recordLength;
-                        maxElementPos = cur / recordLength;
-                        break;
-                    }
-                }
-                if (input != null) {
-                    input.close();
-                }
-                input = hdfsFileSystem.open(inputPaths[inputIndex]);
+            if (minElementPos <= pos && pos < maxElementPos) {
+                mappedByteBuffer.position((int) ((pos - minElementPos) * recordLength));
+            } else {
+                mappedByteBuffer = null;
             }
-            input.seek((pos - minElementPos) * recordLength);
-            currentElementPos = pos;
+            input.position(pos * recordLength);
         }
 
         public Element readElement() throws IOException {
-            if (currentElementPos >= maxElementPos) {
-                inputIndex++;
-                minElementPos = maxElementPos;
-                maxElementPos += inputFileSizes[inputIndex] / recordLength;
-                if (input != null) {
-                    input.close();
-                }
-                input = hdfsFileSystem.open(inputPaths[inputIndex]);
+            if (mappedByteBuffer == null || !mappedByteBuffer.hasRemaining()) {
+                long size = Math.min(input.size() - input.position(), MEMORY_MAP_ELEMENT_COUNT * recordLength);
+                mappedByteBuffer = input.map(FileChannel.MapMode.READ_ONLY, input.position(), size);
+                minElementPos = input.position() / recordLength;
+                maxElementPos = minElementPos + size / recordLength;
             }
+            mappedByteBuffer.get(tempKeyBytes);
+            mappedByteBuffer.get(tempValueBytes);
 
-            input.readFully(tempKeyBytes);
-            input.readFully(tempValueBytes);
+            input.position(input.position() + recordLength);
 
             return new Element(new Text(tempKeyBytes), new Text(tempValueBytes));
         }
     }
 
     public static class TeraFileOutput implements AutoCloseable {
-        private final OutputStream output;
+        private final BufferedOutputStream output;
 
-        public TeraFileOutput(FileSystem hdfsFileSystem, String outputFile) throws IOException {
-            Path outputPath = new Path(outputFile);
-            output = hdfsFileSystem.create(outputPath, true);
+        public TeraFileOutput(String outputFile) throws FileNotFoundException {
+            output = new BufferedOutputStream(new FileOutputStream(outputFile, false));
         }
 
         public void writeElement(Element element) throws IOException {
-            byte[] key = element.getKey().value;
-            output.write(key, 0, key.length);
-
-            byte[] value = element.getValue().value;
-            output.write(value, 0, value.length);
+            output.write(element.getKey().value);
+            output.write(element.getValue().value);
         }
 
         public void writeElements(Element[] elements) throws UncheckedIOException {
