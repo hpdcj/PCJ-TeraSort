@@ -206,7 +206,7 @@ public class PcjTeraSortConcurrentSend implements StartPoint {
         long sortingStart = System.nanoTime();
 
         System.out.printf(Locale.ENGLISH, "Thread %d started sorting bucket%n", PCJ.myId());
-        Element[] sortedBuckets = buckets.stream().toArray(Element[]::new);
+        Element[] sortedBuckets = buckets.toArray(new Element[0]);
         Arrays.sort(sortedBuckets);
 
         System.out.printf(Locale.ENGLISH, "Thread %d finished sorting %d elements in %.7f seconds%n",
