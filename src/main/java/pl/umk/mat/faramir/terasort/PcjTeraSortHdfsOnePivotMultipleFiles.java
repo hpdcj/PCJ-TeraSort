@@ -1,15 +1,5 @@
 package pl.umk.mat.faramir.terasort;
 
-import org.apache.hadoop.fs.ContentSummary;
-import org.apache.hadoop.fs.FSDataInputStream;
-import org.apache.hadoop.fs.FileStatus;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.Path;
-import org.pcj.PCJ;
-import org.pcj.PcjFuture;
-import org.pcj.RegisterStorage;
-import org.pcj.StartPoint;
-import org.pcj.Storage;
 import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -26,6 +16,16 @@ import java.util.function.Predicate;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import org.apache.hadoop.fs.ContentSummary;
+import org.apache.hadoop.fs.FSDataInputStream;
+import org.apache.hadoop.fs.FileStatus;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+import org.pcj.PCJ;
+import org.pcj.PcjFuture;
+import org.pcj.RegisterStorage;
+import org.pcj.StartPoint;
+import org.pcj.Storage;
 
 /**
  * Fifth version of PcjTeraSort benchmark based on {@link PcjTeraSortOnePivotMultipleFiles}.
@@ -334,6 +334,7 @@ public class PcjTeraSortHdfsOnePivotMultipleFiles implements StartPoint {
 
             input.readFully(tempKeyBytes);
             input.readFully(tempValueBytes);
+            currentElementPos++;
 
             return new Element(new Text(tempKeyBytes), new Text(tempValueBytes));
         }

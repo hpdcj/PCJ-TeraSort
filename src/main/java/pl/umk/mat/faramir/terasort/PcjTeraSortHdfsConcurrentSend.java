@@ -80,11 +80,13 @@ public class PcjTeraSortHdfsConcurrentSend implements StartPoint {
         String outputDir = PCJ.getProperty("outputFile");
         String outputFile = String.format("%s/part%05d", outputDir, PCJ.myId());
         int sampleSize = Integer.parseInt(PCJ.getProperty("sampleSize"));
+        int concurSendBucketSize = Integer.parseInt(System.getProperty("concurSendBucketSize", "100000"));
 
         if (PCJ.myId() == 0) {
             System.out.printf(Locale.ENGLISH, "Input file: %s%n", inputFile);
             System.out.printf(Locale.ENGLISH, "Output dir: %s%n", outputDir);
             System.out.printf(Locale.ENGLISH, "Sample size is: %d%n", sampleSize);
+            System.out.printf(Locale.ENGLISH, "ConcurSend bucket size: %d%n", concurSendBucketSize);
 
             hdfsFileSystem.delete(new Path(outputDir), true);
         }
@@ -178,7 +180,7 @@ public class PcjTeraSortHdfsConcurrentSend implements StartPoint {
                 }
                 List<Element> bucket = localBuckets[bucketNo];
                 bucket.add(e);
-                if (bucket.size() == 100_000) {
+                if (bucket.size() == concurSendBucketSize) {
                     sender.accept(bucket, bucketNo);
                     bucket.clear();
                 }
@@ -351,6 +353,7 @@ public class PcjTeraSortHdfsConcurrentSend implements StartPoint {
 
             input.readFully(tempKeyBytes);
             input.readFully(tempValueBytes);
+            currentElementPos++;
 
             return new Element(new Text(tempKeyBytes), new Text(tempValueBytes));
         }

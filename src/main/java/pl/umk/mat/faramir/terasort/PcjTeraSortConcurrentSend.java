@@ -1,10 +1,5 @@
 package pl.umk.mat.faramir.terasort;
 
-import org.pcj.PCJ;
-import org.pcj.PcjFuture;
-import org.pcj.RegisterStorage;
-import org.pcj.StartPoint;
-import org.pcj.Storage;
 import java.io.*;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
@@ -18,6 +13,11 @@ import java.util.Objects;
 import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import org.pcj.PCJ;
+import org.pcj.PcjFuture;
+import org.pcj.RegisterStorage;
+import org.pcj.StartPoint;
+import org.pcj.Storage;
 
 /**
  * Seventh version of PcjTeraSort benchmark based on {@link PcjTeraSortOnePivotMultipleFiles}
@@ -66,11 +66,13 @@ public class PcjTeraSortConcurrentSend implements StartPoint {
         String outputFileSuffix = "-part-";
         String outputFileName = String.format("%s%s%05d", outputFilePrefix, outputFileSuffix, PCJ.myId());
         int sampleSize = Integer.parseInt(PCJ.getProperty("sampleSize"));
+        int concurSendBucketSize = Integer.parseInt(System.getProperty("concurSendBucketSize", "100000"));
 
         if (PCJ.myId() == 0) {
             System.out.printf(Locale.ENGLISH, "Input file: %s%n", inputFile);
             System.out.printf(Locale.ENGLISH, "Output file prefix: %s%n", outputFilePrefix);
             System.out.printf(Locale.ENGLISH, "Sample size is: %d%n", sampleSize);
+            System.out.printf(Locale.ENGLISH, "ConcurSend bucket size: %d%n", concurSendBucketSize);
 
             String namePrefix = new File(outputFilePrefix).getName() + outputFileSuffix;
 
@@ -176,7 +178,7 @@ public class PcjTeraSortConcurrentSend implements StartPoint {
                 }
                 List<Element> bucket = localBuckets[bucketNo];
                 bucket.add(e);
-                if (bucket.size() == 100_000) {
+                if (bucket.size() == concurSendBucketSize) {
                     sender.accept(bucket, bucketNo);
                     bucket.clear();
                 }
